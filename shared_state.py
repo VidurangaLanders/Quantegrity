@@ -42,6 +42,34 @@ class QuantumKeys:
     aq_k1_bob: str = ""  # Authentication key (Bob side)
     vq_k1_alice: str = ""  # Voting key (Alice side)
     vq_k1_bob: str = ""  # Voting key (Bob side)
+    psk: str = ""  # Pre-Shared Key for SEO-AH authentication
+
+@dataclass
+class SecurityEvent:
+    """Security event for IDS tracking"""
+    event_id: str
+    timestamp: str
+    event_type: str  # "BER_ANOMALY", "AUTH_FAILURE", "MITM_DETECTED", etc.
+    threat_level: str  # "NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"
+    source: str  # voter_id or "system"
+    description: str
+    metrics: Dict = None
+
+    def __post_init__(self):
+        if self.metrics is None:
+            self.metrics = {}
+
+@dataclass
+class ErrorCorrectionStats:
+    """Statistics from error correction process"""
+    timestamp: str
+    voter_id: str
+    original_ber: float
+    final_ber: float
+    key_length_before: int
+    key_length_after: int
+    corrections_applied: int
+    success: bool
 
 @dataclass
 class BiometricData:
@@ -161,28 +189,54 @@ class SharedState:
             "bulletin_board": {},
             "mixnet_tables": {},
             "crypto_sessions": {},
+            "security_events": {},  # NEW: Security event log
+            "error_correction_stats": {},  # NEW: Error correction statistics
+            "session_tokens": {},  # NEW: SEO-AH session tokens
             "system_stats": {
                 "total_voters": 0,
                 "total_votes": 0,
                 "last_updated": "",
-                "quantum_operations": 0
+                "quantum_operations": 0,
+                "total_security_events": 0,  # NEW
+                "total_error_corrections": 0,  # NEW
+                "avg_ber": 0.0  # NEW
             }
         }
     
     def _convert_loaded_data(self, data: Dict) -> Dict:
         """Convert loaded JSON data back to proper dataclass structure"""
+        # Add missing security fields for existing data files
+        if "security_events" not in data:
+            data["security_events"] = {}
+        if "error_correction_stats" not in data:
+            data["error_correction_stats"] = {}
+        if "session_tokens" not in data:
+            data["session_tokens"] = {}
+
+        # Update system stats with new fields
+        if "system_stats" in data:
+            if "total_security_events" not in data["system_stats"]:
+                data["system_stats"]["total_security_events"] = 0
+            if "total_error_corrections" not in data["system_stats"]:
+                data["system_stats"]["total_error_corrections"] = 0
+            if "avg_ber" not in data["system_stats"]:
+                data["system_stats"]["avg_ber"] = 0.0
+
         # Convert voters
         if "voters" in data:
             for voter_id, voter_data in data["voters"].items():
                 if isinstance(voter_data, dict):
                     # Convert nested structures
                     if "quantum_keys" in voter_data and isinstance(voter_data["quantum_keys"], dict):
+                        # Add PSK field if missing
+                        if "psk" not in voter_data["quantum_keys"]:
+                            voter_data["quantum_keys"]["psk"] = ""
                         voter_data["quantum_keys"] = QuantumKeys(**voter_data["quantum_keys"])
                     if "biometric_data" in voter_data and isinstance(voter_data["biometric_data"], dict):
                         voter_data["biometric_data"] = BiometricData(**voter_data["biometric_data"])
                     if "device_info" in voter_data and isinstance(voter_data["device_info"], dict):
                         voter_data["device_info"] = DeviceInfo(**voter_data["device_info"])
-        
+
         return data
     
     def _save_data(self):
@@ -720,7 +774,7 @@ class SharedState:
     def show_authentication_flow_summary():
         """Helper function to show the complete authentication flow"""
         st.markdown("### 📋 Complete Authentication Flow")
-        
+
         flow_steps = [
             {
                 "step": "1. Device Verification (Completed)",
@@ -728,7 +782,7 @@ class SharedState:
                 "status": "✅ Done"
             },
             {
-                "step": "2. Biometric Authentication", 
+                "step": "2. Biometric Authentication",
                 "description": "Decrypt Q_K1 with biometric, generate AQ_K1",
                 "status": "✅ Done"
             },
@@ -743,7 +797,7 @@ class SharedState:
                 "status": "⏳ Pending"
             }
         ]
-        
+
         for step_info in flow_steps:
             st.markdown(f"""
             <div class="process-step">
@@ -751,6 +805,104 @@ class SharedState:
                 {step_info['description']}
             </div>
             """, unsafe_allow_html=True)
+
+    # ========================================================================
+    # NEW: Security Enhancement Methods
+    # ========================================================================
+
+    def log_security_event(self, event: SecurityEvent):
+        """Log a security event from the IDS"""
+        self.data["security_events"][event.event_id] = asdict(event)
+        self.data["system_stats"]["total_security_events"] += 1
+        self._save_data()
+
+    def get_security_events(self, limit: int = 100) -> List[SecurityEvent]:
+        """Get recent security events"""
+        events = []
+        for event_data in self.data["security_events"].values():
+            events.append(SecurityEvent(**event_data))
+
+        # Sort by timestamp (newest first)
+        events.sort(key=lambda x: x.timestamp, reverse=True)
+        return events[:limit]
+
+    def get_security_events_by_threat_level(self, threat_level: str) -> List[SecurityEvent]:
+        """Get security events filtered by threat level"""
+        events = []
+        for event_data in self.data["security_events"].values():
+            if event_data["threat_level"] == threat_level:
+                events.append(SecurityEvent(**event_data))
+        return sorted(events, key=lambda x: x.timestamp, reverse=True)
+
+    def log_error_correction(self, stats: ErrorCorrectionStats):
+        """Log error correction statistics"""
+        stats_id = f"{stats.voter_id}_{stats.timestamp}"
+        self.data["error_correction_stats"][stats_id] = asdict(stats)
+        self.data["system_stats"]["total_error_corrections"] += 1
+
+        # Update average BER
+        all_stats = list(self.data["error_correction_stats"].values())
+        if all_stats:
+            avg_ber = sum(s["original_ber"] for s in all_stats) / len(all_stats)
+            self.data["system_stats"]["avg_ber"] = avg_ber
+
+        self._save_data()
+
+    def get_error_correction_stats(self, voter_id: str = None) -> List[ErrorCorrectionStats]:
+        """Get error correction statistics"""
+        stats_list = []
+        for stats_data in self.data["error_correction_stats"].values():
+            if voter_id is None or stats_data["voter_id"] == voter_id:
+                stats_list.append(ErrorCorrectionStats(**stats_data))
+        return sorted(stats_list, key=lambda x: x.timestamp, reverse=True)
+
+    def store_session_token(self, token: str, session_data: Dict):
+        """Store SEO-AH session token"""
+        self.data["session_tokens"][token] = session_data
+        self._save_data()
+
+    def get_session_token(self, token: str) -> Optional[Dict]:
+        """Retrieve session token data"""
+        return self.data["session_tokens"].get(token)
+
+    def verify_session_token(self, token: str) -> bool:
+        """Verify if session token is valid and not expired"""
+        import time
+        session = self.data["session_tokens"].get(token)
+        if session and time.time() < session.get("expires_at", 0):
+            return True
+        return False
+
+    def revoke_session_token(self, token: str):
+        """Revoke a session token"""
+        if token in self.data["session_tokens"]:
+            del self.data["session_tokens"][token]
+            self._save_data()
+
+    def get_security_dashboard_stats(self) -> Dict:
+        """Get comprehensive security statistics for dashboard"""
+        events = self.get_security_events(1000)
+
+        # Count by threat level
+        threat_counts = {"NONE": 0, "LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        for event in events:
+            threat_counts[event.threat_level] = threat_counts.get(event.threat_level, 0) + 1
+
+        # Recent high-priority events
+        high_priority = [e for e in events if e.threat_level in ["HIGH", "CRITICAL"]][:10]
+
+        # Error correction stats
+        ec_stats = self.get_error_correction_stats()
+        avg_ber = sum(s.original_ber for s in ec_stats) / len(ec_stats) if ec_stats else 0.0
+
+        return {
+            "total_events": len(events),
+            "threat_counts": threat_counts,
+            "high_priority_events": [asdict(e) for e in high_priority],
+            "avg_ber": avg_ber,
+            "total_error_corrections": len(ec_stats),
+            "active_sessions": len(self.data["session_tokens"])
+        }
 
 # Global shared state instance
 shared_state = SharedState()

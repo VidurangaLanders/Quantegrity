@@ -36,6 +36,19 @@ def run_voter_portal():
     ]
     subprocess.run(cmd)
 
+def run_security_dashboard():
+    """Run the Security Monitoring Dashboard"""
+    print("🛡️ Starting Quantegrity Security Dashboard...")
+    cmd = [
+        sys.executable, "-m", "streamlit", "run", "security_dashboard.py",
+        "--server.port", "8503",
+        "--server.headless", "true",
+        "--browser.gatherUsageStats", "false",
+        "--theme.base", "light",
+        "--theme.primaryColor", "#DC143C"
+    ]
+    subprocess.run(cmd)
+
 def check_dependencies():
     """Check if required Python packages are installed"""
     required_packages = [
@@ -110,7 +123,8 @@ def main():
     print("\n🚀 Starting applications...")
     print("🏛️ Election Authority Dashboard: http://localhost:8501")
     print("🗳️ Voter Portal: http://localhost:8502")
-    print("\n💡 Features:")
+    print("🛡️ Security Dashboard: http://localhost:8503")
+    print("\n💡 Core Features:")
     print("   📝 Quantum Voter Registration with QRNG")
     print("   🔐 Device Verification using Q_K2 encryption")
     print("   🌌 SEDJO-based Authentication (Q_K1 → AQ_K1)")
@@ -118,6 +132,13 @@ def main():
     print("   📋 Cryptographic Bulletin Board")
     print("   🔍 Receipt Verification")
     print("   🔬 Live Quantum Process Demonstration")
+    print("\n🛡️ NEW: Security Enhancements:")
+    print("   🔒 SEO-AH MITM-Resistant Authentication")
+    print("   🔧 CASCADE Error Correction (up to 11% BER)")
+    print("   🔐 Privacy Amplification (Toeplitz Hashing)")
+    print("   🚨 Real-time Intrusion Detection System")
+    print("   📊 Security Event Monitoring Dashboard")
+    print("   📈 BER Trend Analysis")
     
     print("\n📖 Usage Instructions:")
     print("   1. Start with Election Authority (8501) to create election")
@@ -136,23 +157,27 @@ def main():
     print("   ✅ Interactive cryptographic demonstrations")
     print("   ✅ End-to-end voting workflow")
     
-    print("\nPress Ctrl+C to stop both applications")
+    print("\nPress Ctrl+C to stop all applications")
     print("=" * 60)
-    
-    # Start both applications in separate threads
+
+    # Start all three applications in separate threads
     ea_thread = threading.Thread(target=run_election_authority, daemon=True)
     voter_thread = threading.Thread(target=run_voter_portal, daemon=True)
-    
+    security_thread = threading.Thread(target=run_security_dashboard, daemon=True)
+
     try:
         ea_thread.start()
-        time.sleep(3)  # Slightly longer delay to ensure EA starts first
+        time.sleep(2)
         voter_thread.start()
-        
-        print("🟢 Both applications are starting...")
+        time.sleep(2)
+        security_thread.start()
+
+        print("🟢 All applications are starting...")
         print("⏳ Please wait a moment for Streamlit to initialize...")
         print("\n🔗 Open these URLs in your browser:")
         print("   🏛️ Election Authority: http://localhost:8501")
         print("   🗳️ Voter Portal: http://localhost:8502")
+        print("   🛡️ Security Dashboard: http://localhost:8503")
         
         print("\n🎯 Demonstration Workflow:")
         print("   Step 1: Create election in EA dashboard")
